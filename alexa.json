@@ -1,7 +1,7 @@
 {
     "interactionModel": {
         "languageModel": {
-            "invocationName": "navisonic",
+            "invocationName": "music box",
             "intents": [
                 {
                     "name": "AMAZON.CancelIntent",
@@ -121,6 +121,21 @@
                         "Remove the star from this song",
                         "Delete this song from my favourites",
                         "Unstar this song"
+                    ]
+                },
+                {
+                    "name": "NaviSonicPlaySong",
+                    "slots": [
+                        {
+                            "name": "song",
+                            "type": "AMAZON.MusicRecording"
+                        }
+                    ],
+                    "samples": [
+                        "Play {song}",
+                        "Play the song {song}",
+                        "Play me {song}",
+                        "Play the track {song}"
                     ]
                 },
                 {

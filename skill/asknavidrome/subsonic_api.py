@@ -1,10 +1,11 @@
 from hashlib import md5
-from typing import Union
+from typing import Union, Optional, List, Dict
 import logging
 import random
 import secrets
 
 import libsonic
+from . import matching
 
 
 class SubsonicConnection:
@@ -422,3 +423,57 @@ class SubsonicConnection:
             self.conn.unstar(None, None, id_list)
 
             return None
+
+    def search_artist_best(self, term: str) -> Optional[Dict]:
+        """Search for an artist and return the best match using intelligent ranking.
+
+        Prefers exact normalized matches over fuzzy results.
+
+        :param str term: The name of the artist
+        :return: A dictionary with artist details or None if no results are found
+        :rtype: dict | None
+        """
+        self.logger.debug(f'In function search_artist_best() for {term}')
+
+        artists = self.search_artist(term)
+        if not artists:
+            return None
+
+        best = matching.find_best_artist(term, artists)
+        return best
+
+    def search_song_best(self, song_term: str, artist_term: Optional[str] = None) -> Optional[Dict]:
+        """Search for a song and return the best match using intelligent ranking.
+
+        If artist_term is provided, prefers songs matching that artist.
+
+        :param str song_term: The name of the song
+        :param str artist_term: Optional artist name to help filter results
+        :return: A dictionary with song details or None if no results are found
+        :rtype: dict | None
+        """
+        self.logger.debug(f'In function search_song_best() for {song_term} by {artist_term}')
+
+        songs = self.search_song(song_term)
+        if not songs:
+            return None
+
+        best = matching.find_best_song(song_term, songs, artist_term)
+        return best
+
+    def search_song_exact_title(self, song_term: str) -> Optional[List[Dict]]:
+        """Find all songs matching the exact normalized title.
+
+        Useful for disambiguating when multiple exact matches exist.
+
+        :param str song_term: The name of the song
+        :return: A list of matching songs or None if none found
+        :rtype: list | None
+        """
+        self.logger.debug(f'In function search_song_exact_title() for {song_term}')
+
+        songs = self.search_song(song_term)
+        if not songs:
+            return None
+
+        return matching.find_song_by_exact_title(song_term, songs)
