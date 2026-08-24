@@ -367,8 +367,9 @@ class SubsonicConnection:
         salt = secrets.token_hex(16)
         auth_token = md5(self.passwd.encode() + salt.encode())
 
+        port_int = int(self.port)
         port_str = ''
-        if (self.server_url.startswith('https://') and self.port != 443) or (self.server_url.startswith('http://') and self.port != 80):
+        if (self.server_url.startswith('https://') and port_int != 443) or (self.server_url.startswith('http://') and port_int != 80):
             port_str = f':{self.port}'
 
         uri = (
