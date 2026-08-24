@@ -49,7 +49,7 @@ def start_playback(mode: str, text: str, card_data: dict, track_details: Track, 
                 content_description=track_details.title,
                 sources=[
                     display.ImageInstance(
-                        url='https://github.com/navidrome/navidrome/raw/master/resources/logo-192x192.png'
+                        url='https://raw.githubusercontent.com/navidrome/navidrome/master/resources/logo-192x192.png'
                     )
                 ]
             )                                                              
@@ -153,7 +153,7 @@ def add_screen_background(card_data: dict) -> Union[AudioItemMetadata, None]:
                 content_description=card_data['title'],
                 sources=[
                     display.ImageInstance(
-                        url='https://github.com/navidrome/navidrome/raw/master/resources/logo-192x192.png'
+                        url='https://raw.githubusercontent.com/navidrome/navidrome/master/resources/logo-192x192.png'
                     )
                 ]
             ),
@@ -161,7 +161,7 @@ def add_screen_background(card_data: dict) -> Union[AudioItemMetadata, None]:
                 content_description=card_data['title'],
                 sources=[
                     display.ImageInstance(
-                        url='https://github.com/navidrome/navidrome/raw/master/resources/logo-192x192.png'
+                        url='https://raw.githubusercontent.com/navidrome/navidrome/master/resources/logo-192x192.png'
                     )
                 ]
             )
