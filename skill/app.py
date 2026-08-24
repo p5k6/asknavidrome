@@ -522,10 +522,26 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
                 return controller.start_playback('play', speech, card, track_details, handler_input)
 
             elif exact_matches and len(exact_matches) > 1:
-                artists_str = ', '.join([f'{m.get("artist")}' for m in exact_matches[:3]])
-                text = sanitise_speech_output(f"I found multiple songs called {song.value} by {artists_str}. Which artist do you mean?")
-                handler_input.response_builder.speak(text).ask(text)
-                return handler_input.response_builder.response
+                from asknavidrome.matching import normalize_string
+
+                song_to_play = exact_matches[0]
+                for match in exact_matches:
+                    artist = match.get('artist', '')
+                    norm_artist = normalize_string(artist)
+                    if norm_artist and norm_artist != normalize_string('various'):
+                        song_to_play = match
+                        logger.debug(f'Selected {artist} from multiple matches (excluding Various)')
+                        break
+
+                play_queue.clear()
+                controller.enqueue_songs(connection, play_queue, [song_to_play.get('id')])
+
+                speech = sanitise_speech_output(f'Playing {song_to_play.get("title")} by {song_to_play.get("artist")}')
+                logger.info(speech)
+                card = {'title': 'AskNavidrome', 'text': speech}
+                track_details = play_queue.get_next_track()
+
+                return controller.start_playback('play', speech, card, track_details, handler_input)
 
             else:
                 text = sanitise_speech_output(f"I couldn't find a song called {song.value}.")
