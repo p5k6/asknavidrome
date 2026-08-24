@@ -364,15 +364,18 @@ class NaviSonicPlayAlbumByArtist(AbstractRequestHandler):
         artist = get_slot_value_v2(handler_input, 'artist')
         album = get_slot_value_v2(handler_input, 'album')
 
-        if artist is not None and album is not None:
+        artist_value = artist.value if artist else None
+        album_value = album.value if album else None
+
+        if artist_value and album_value:
             # Play album by artist method
-            logger.debug(f'Searching for the album {album.value} by {artist.value}')
+            logger.debug(f'Searching for the album {album_value} by {artist_value}')
 
             # Search for an artist using best matching
-            artist_lookup = connection.search_artist_best(artist.value)
+            artist_lookup = connection.search_artist_best(artist_value)
 
             if artist_lookup is None:
-                text = sanitise_speech_output(f"I couldn't find the artist {artist.value} in the collection.")
+                text = sanitise_speech_output(f"I couldn't find the artist {artist_value} in the collection.")
                 handler_input.response_builder.speak(text).ask(text)
 
                 return handler_input.response_builder.response
@@ -382,10 +385,10 @@ class NaviSonicPlayAlbumByArtist(AbstractRequestHandler):
 
                 # Search the list of dictionaries for the requested album
                 # Strings are all converted to lower case to minimise matching errors
-                result = [album_result for album_result in artist_album_lookup if album_result.get('name').lower() == album.value.lower()]
+                result = [album_result for album_result in artist_album_lookup if album_result.get('name').lower() == album_value.lower()]
 
                 if not result:
-                    text = sanitise_speech_output(f"I couldn't find an album called {album.value} by {artist.value} in the collection.")
+                    text = sanitise_speech_output(f"I couldn't find an album called {album_value} by {artist_value} in the collection.")
                     handler_input.response_builder.speak(text).ask(text)
 
                     return handler_input.response_builder.response
@@ -399,7 +402,7 @@ class NaviSonicPlayAlbumByArtist(AbstractRequestHandler):
                 backgroundProcess = Process(target=queue_worker_thread, args=(connection, play_queue, song_id_list[2:]))  # Create a thread to enqueue the remaining tracks
                 backgroundProcess.start()  # Start the additional thread
 
-                speech = sanitise_speech_output(f'Playing {album.value} by: {artist.value}')
+                speech = sanitise_speech_output(f'Playing {album_value} by: {artist_value}')
                 logger.info(speech)
                 card = {'title': 'AskNavidrome',
                         'text': speech
@@ -408,14 +411,14 @@ class NaviSonicPlayAlbumByArtist(AbstractRequestHandler):
 
                 return controller.start_playback('play', speech, card, track_details, handler_input)
 
-        elif artist is None and album:
+        elif not artist_value and album_value:
             # Play album method
-            logger.debug(f'Searching for the album {album.value}')
+            logger.debug(f'Searching for the album {album_value}')
 
-            result = connection.search_album(album.value)
+            result = connection.search_album(album_value)
 
             if result is None:
-                text = sanitise_speech_output(f"I couldn't find the album {album.value} in the collection.")
+                text = sanitise_speech_output(f"I couldn't find the album {album_value} in the collection.")
                 handler_input.response_builder.speak(text).ask(text)
 
                 return handler_input.response_builder.response
@@ -429,7 +432,7 @@ class NaviSonicPlayAlbumByArtist(AbstractRequestHandler):
                 backgroundProcess = Process(target=queue_worker_thread, args=(connection, play_queue, song_id_list[2:]))  # Create a thread to enqueue the remaining tracks
                 backgroundProcess.start()  # Start the additional thread
 
-                speech = sanitise_speech_output(f'Playing {album.value}')
+                speech = sanitise_speech_output(f'Playing {album_value}')
                 logger.info(speech)
                 card = {'title': 'AskNavidrome',
                         'text': speech
@@ -498,10 +501,11 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
         artist = get_slot_value_v2(handler_input, 'artist')
         song = get_slot_value_v2(handler_input, 'song')
 
-        logger.debug(f'Searching for the song {song.value} by {artist.value if artist else "unknown artist"}')
+        artist_value = artist.value if artist else None
+        logger.debug(f'Searching for the song {song.value} by {artist_value if artist_value else "unknown artist"}')
 
-        # If artist slot is missing, try to find exact title match
-        if artist is None:
+        # If artist slot is missing or empty, try to find exact title match
+        if not artist_value:
             logger.debug(f'Artist slot missing, searching for exact title: {song.value}')
             exact_matches = connection.search_song_exact_title(song.value)
 
@@ -528,8 +532,7 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
                 handler_input.response_builder.speak(text).ask(text)
                 return handler_input.response_builder.response
 
-        # Artist slot is present
-        artist_value = artist.value
+        # Artist slot is present and has a value
         logger.debug(f'Searching for the song {song.value} by {artist_value}')
 
         # Search for the artist using best matching
