@@ -552,15 +552,11 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
             # Search for the best matching song
             song_best = connection.search_song_best(song.value, artist_value)
 
-            logger.debug(f'Song search result: {song_best}')
             if song_best:
-                logger.debug(f'Song artistId: {song_best.get("artistId")}, Artist ID from lookup: {artist_id}')
-
-            if song_best and song_best.get('artistId') == artist_id:
                 play_queue.clear()
                 controller.enqueue_songs(connection, play_queue, [song_best.get('id')])
 
-                speech = sanitise_speech_output(f'Playing {song_best.get("title")} by {artist_name}')
+                speech = sanitise_speech_output(f'Playing {song_best.get("title")} by {song_best.get("artist")}')
                 logger.info(speech)
                 card = {'title': 'AskNavidrome', 'text': speech}
                 track_details = play_queue.get_next_track()
