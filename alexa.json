@@ -139,6 +139,22 @@
                     ]
                 },
                 {
+                    "name": "NaviSonicClarifyArtist",
+                    "slots": [
+                        {
+                            "name": "artist",
+                            "type": "AMAZON.Artist"
+                        }
+                    ],
+                    "samples": [
+                        "{artist}",
+                        "the artist {artist}",
+                        "by {artist}",
+                        "I meant {artist}",
+                        "that's {artist}"
+                    ]
+                },
+                {
                     "name": "NaviSonicPlaySongByArtist",
                     "slots": [
                         {

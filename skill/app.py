@@ -484,6 +484,56 @@ class NaviSonicPlaySong(AbstractRequestHandler):
             return handler_input.response_builder.response
 
 
+class NaviSonicClarifyArtist(AbstractRequestHandler):
+    """Handle clarification when user specifies an artist for an ambiguous song"""
+
+    def can_handle(self, handler_input: HandlerInput) -> bool:
+        return is_intent_name('NaviSonicClarifyArtist')(handler_input)
+
+    def handle(self, handler_input: HandlerInput) -> Response:
+        logger.debug('In NaviSonicClarifyArtist')
+
+        artist = get_slot_value_v2(handler_input, 'artist')
+        session_attrs = handler_input.attributes_manager.session_attributes
+
+        ambiguous_songs = session_attrs.get('ambiguous_songs')
+        song_title = session_attrs.get('ambiguous_song_title')
+
+        if not ambiguous_songs or not artist:
+            text = sanitise_speech_output("I didn't catch that. Please try again.")
+            handler_input.response_builder.speak(text).ask(text)
+            return handler_input.response_builder.response
+
+        from asknavidrome.matching import artists_match
+
+        artist_value = artist.value
+        matching_song = None
+
+        for song in ambiguous_songs:
+            if artists_match(artist_value, song.get('artist', '')):
+                matching_song = song
+                break
+
+        if matching_song:
+            play_queue.clear()
+            controller.enqueue_songs(connection, play_queue, [matching_song.get('id')])
+
+            speech = sanitise_speech_output(f'Playing {matching_song.get("title")} by {matching_song.get("artist")}')
+            logger.info(speech)
+            card = {'title': 'AskNavidrome', 'text': speech}
+            track_details = play_queue.get_next_track()
+
+            session_attrs.pop('ambiguous_songs', None)
+            session_attrs.pop('ambiguous_song_title', None)
+
+            return controller.start_playback('play', speech, card, track_details, handler_input)
+
+        else:
+            text = sanitise_speech_output(f"I didn't find {artist_value} in the options. Which artist did you mean?")
+            handler_input.response_builder.speak(text).ask(text)
+            return handler_input.response_builder.response
+
+
 class NaviSonicPlaySongByArtist(AbstractRequestHandler):
     """Handle the NaviSonicPlaySongByArtist intent
 
@@ -522,26 +572,13 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
                 return controller.start_playback('play', speech, card, track_details, handler_input)
 
             elif exact_matches and len(exact_matches) > 1:
-                from asknavidrome.matching import normalize_string
+                handler_input.attributes_manager.session_attributes['ambiguous_songs'] = exact_matches
+                handler_input.attributes_manager.session_attributes['ambiguous_song_title'] = song.value
 
-                song_to_play = exact_matches[0]
-                for match in exact_matches:
-                    artist = match.get('artist', '')
-                    norm_artist = normalize_string(artist)
-                    if norm_artist and norm_artist != normalize_string('various'):
-                        song_to_play = match
-                        logger.debug(f'Selected {artist} from multiple matches (excluding Various)')
-                        break
-
-                play_queue.clear()
-                controller.enqueue_songs(connection, play_queue, [song_to_play.get('id')])
-
-                speech = sanitise_speech_output(f'Playing {song_to_play.get("title")} by {song_to_play.get("artist")}')
-                logger.info(speech)
-                card = {'title': 'AskNavidrome', 'text': speech}
-                track_details = play_queue.get_next_track()
-
-                return controller.start_playback('play', speech, card, track_details, handler_input)
+                artists_str = ', '.join([f'{m.get("artist")}' for m in exact_matches[:3]])
+                text = sanitise_speech_output(f"I found multiple songs called {song.value} by {artists_str}. Which artist do you mean?")
+                handler_input.response_builder.speak(text).ask(text)
+                return handler_input.response_builder.response
 
             else:
                 text = sanitise_speech_output(f"I couldn't find a song called {song.value}.")
@@ -1203,6 +1240,7 @@ sb.add_request_handler(NaviSonicPlayMusicByArtist())
 sb.add_request_handler(NaviSonicPlayAlbumByArtist())
 sb.add_request_handler(NaviSonicPlaySongByArtist())
 sb.add_request_handler(NaviSonicPlaySong())
+sb.add_request_handler(NaviSonicClarifyArtist())
 sb.add_request_handler(NaviSonicPlayPlaylist())
 sb.add_request_handler(NaviSonicPlayFavouriteSongs())
 sb.add_request_handler(NaviSonicPlayMusicByGenre())
