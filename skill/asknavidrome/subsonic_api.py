@@ -445,7 +445,7 @@ class SubsonicConnection:
     def search_song_best(self, song_term: str, artist_term: Optional[str] = None) -> Optional[Dict]:
         """Search for a song and return the best match using intelligent ranking.
 
-        If artist_term is provided, prefers songs matching that artist.
+        If artist_term is provided, searches for song + artist together to improve ranking.
 
         :param str song_term: The name of the song
         :param str artist_term: Optional artist name to help filter results
@@ -453,6 +453,18 @@ class SubsonicConnection:
         :rtype: dict | None
         """
         self.logger.debug(f'In function search_song_best() for {song_term} by {artist_term}')
+
+        if artist_term:
+            search_term = f"{song_term} {artist_term}"
+            self.logger.debug(f'Searching with combined term: {search_term}')
+            songs = self.search_song(search_term)
+
+            if songs:
+                best = matching.find_best_song(song_term, songs, artist_term)
+                if best:
+                    return best
+
+            self.logger.debug(f'Combined search failed, trying song-only search')
 
         songs = self.search_song(song_term)
         if not songs:
