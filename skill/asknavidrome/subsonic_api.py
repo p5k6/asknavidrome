@@ -460,17 +460,31 @@ class SubsonicConnection:
             songs = self.search_song(search_term)
 
             if songs:
+                self.logger.debug(f'Combined search returned {len(songs)} results')
+                for i, song in enumerate(songs[:5]):
+                    self.logger.debug(f'  Result {i}: {song.get("title")} by {song.get("artist")}')
                 best = matching.find_best_song(song_term, songs, artist_term)
                 if best:
+                    self.logger.info(f'Found best match: {best.get("title")} by {best.get("artist")}')
                     return best
+                self.logger.debug(f'No best match found from combined search results')
 
             self.logger.debug(f'Combined search failed, trying song-only search')
 
         songs = self.search_song(song_term)
         if not songs:
+            self.logger.debug(f'No results for song search: {song_term}')
             return None
 
+        self.logger.debug(f'Song-only search returned {len(songs)} results for "{song_term}"')
+        for i, song in enumerate(songs[:10]):
+            self.logger.debug(f'  Result {i}: {song.get("title")} by {song.get("artist")}')
+
         best = matching.find_best_song(song_term, songs, artist_term)
+        if best:
+            self.logger.info(f'Found best match: {best.get("title")} by {best.get("artist")}')
+        else:
+            self.logger.debug(f'No best match found from song-only search')
         return best
 
     def search_song_exact_title(self, song_term: str) -> Optional[List[Dict]]:

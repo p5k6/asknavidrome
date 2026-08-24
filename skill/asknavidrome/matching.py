@@ -103,15 +103,17 @@ def find_best_song(query: str, songs: List[Dict], artist_filter: Optional[str] =
         matches, score = songs_match(query, title, artist_filter, artist)
         if matches:
             candidates.append((score, song))
+            if score >= 800:
+                logger.debug(f"  HIGH MATCH: '{title}' by '{artist}' (score: {score})")
 
     if not candidates:
-        logger.warning(f"No song match found for {query}")
+        logger.warning(f"No song match found for query='{query}' with artist_filter='{artist_filter}'")
         return None
 
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_score, best_song = candidates[0]
 
-    logger.debug(f"Found song match for {query}: {best_song.get('title')} by {best_song.get('artist')} (score: {best_score})")
+    logger.info(f"Found song match for {query}: {best_song.get('title')} by {best_song.get('artist')} (score: {best_score})")
 
     return best_song
 
