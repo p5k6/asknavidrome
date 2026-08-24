@@ -148,8 +148,11 @@
                     ],
                     "samples": [
                         "{artist}",
+                        "the {artist}",
                         "the artist {artist}",
                         "by {artist}",
+                        "play {artist}",
+                        "{artist} please",
                         "I meant {artist}",
                         "that's {artist}"
                     ]

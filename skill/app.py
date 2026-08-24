@@ -1148,13 +1148,11 @@ class GeneralExceptionHandler(AbstractExceptionHandler):
 
         if ambiguous_songs and get_intent_name(handler_input) == 'AMAZON.FallbackIntent':
             logger.debug('Treating FallbackIntent as artist clarification due to ambiguous songs in session')
-            handler_input.request_envelope.request.intent.name = 'NaviSonicClarifyArtist'
-            handler_input.request_envelope.request.intent.slots = {
-                'artist': type('obj', (object,), {'value': handler_input.request_envelope.request.utterance.strip()})()
-            }
-
-            clarify_handler = NaviSonicClarifyArtist()
-            return clarify_handler.handle(handler_input)
+            song_title = session_attrs.get('ambiguous_song_title', 'the song')
+            artists_list = ', '.join([s.get('artist', 'Unknown') for s in ambiguous_songs[:3]])
+            text = sanitise_speech_output(f"I found multiple songs called {song_title} by {artists_list}. Which artist did you mean?")
+            handler_input.response_builder.speak(text).ask(text)
+            return handler_input.response_builder.response
 
         speech = sanitise_speech_output("Sorry, I didn't get that. Can you please say it again!!")
         handler_input.response_builder.speak(speech).ask(speech)
