@@ -367,9 +367,15 @@ class SubsonicConnection:
         salt = secrets.token_hex(16)
         auth_token = md5(self.passwd.encode() + salt.encode())
 
-        port_int = int(self.port)
+        try:
+            port_int = int(self.port)
+        except (ValueError, TypeError):
+            port_int = 443
+
         port_str = ''
-        if (self.server_url.startswith('https://') and port_int != 443) or (self.server_url.startswith('http://') and port_int != 80):
+        if self.server_url.startswith('https://') and port_int != 443:
+            port_str = f':{self.port}'
+        elif self.server_url.startswith('http://') and port_int != 80:
             port_str = f':{self.port}'
 
         uri = (
@@ -377,6 +383,7 @@ class SubsonicConnection:
             f'{self.user}&s={salt}&t={auth_token.hexdigest()}&id={id}'
         )
 
+        self.logger.debug(f'Generated stream URI: {self.server_url}{port_str}{self.api_location}/stream.view?...')
         return uri
 
     def star_entry(self, id: str, mode: str) -> None:
