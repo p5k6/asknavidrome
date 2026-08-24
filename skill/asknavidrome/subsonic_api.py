@@ -132,11 +132,11 @@ class SubsonicConnection:
 
         self.logger.debug('In function search_artist()')
 
-        result_dict = self.conn.search3(term)
+        result_dict = self.conn.search3(term, artistCount=500)
 
         if len(result_dict['searchResult3']) > 0:
             # Results found
-            result_count = len(result_dict['searchResult3']['artist'])
+            result_count = len(result_dict['searchResult3'].get('artist', []))
 
             self.logger.debug(f'Searching artists for term: {term} found {result_count} entries.')
 
@@ -157,11 +157,11 @@ class SubsonicConnection:
 
         self.logger.debug('In function search_album()')
 
-        result_dict = self.conn.search3(term)
+        result_dict = self.conn.search3(term, albumCount=500)
 
         if len(result_dict['searchResult3']) > 0:
             # Results found
-            result_count = len(result_dict['searchResult3']['album'])
+            result_count = len(result_dict['searchResult3'].get('album', []))
 
             self.logger.debug(f'Searching albums for term: {term} found {result_count} entries.')
 
@@ -182,11 +182,11 @@ class SubsonicConnection:
 
         self.logger.debug('In function search_song()')
 
-        result_dict = self.conn.search3(term)
+        result_dict = self.conn.search3(term, songCount=500)
 
         if len(result_dict['searchResult3']) > 0:
             # Results found
-            result_count = len(result_dict['searchResult3']['song'])
+            result_count = len(result_dict['searchResult3'].get('song', []))
 
             self.logger.debug(f'Searching songs for term: {term}, found {result_count} entries.')
 
