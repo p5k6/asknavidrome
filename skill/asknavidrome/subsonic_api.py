@@ -367,10 +367,12 @@ class SubsonicConnection:
         salt = secrets.token_hex(16)
         auth_token = md5(self.passwd.encode() + salt.encode())
 
-        # This creates a multiline f string, uri contains a single line with both
-        # f strings.
+        port_str = ''
+        if (self.server_url.startswith('https://') and self.port != 443) or (self.server_url.startswith('http://') and self.port != 80):
+            port_str = f':{self.port}'
+
         uri = (
-            f'{self.server_url}:{self.port}{self.api_location}/stream.view?f=json&v={self.api_version}&c=AskNavidrome&u='
+            f'{self.server_url}{port_str}{self.api_location}/stream.view?f=json&v={self.api_version}&c=AskNavidrome&u='
             f'{self.user}&s={salt}&t={auth_token.hexdigest()}&id={id}'
         )
 
