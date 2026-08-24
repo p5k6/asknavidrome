@@ -547,9 +547,14 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
         else:
             artist_id = artist_lookup.get('id')
             artist_name = artist_lookup.get('name')
+            logger.debug(f'Found artist: {artist_name} (ID: {artist_id})')
 
             # Search for the best matching song
             song_best = connection.search_song_best(song.value, artist_value)
+
+            logger.debug(f'Song search result: {song_best}')
+            if song_best:
+                logger.debug(f'Song artistId: {song_best.get("artistId")}, Artist ID from lookup: {artist_id}')
 
             if song_best and song_best.get('artistId') == artist_id:
                 play_queue.clear()
