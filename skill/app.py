@@ -1137,12 +1137,24 @@ class GeneralExceptionHandler(AbstractExceptionHandler):
     def handle(self, handler_input: HandlerInput, exception: Exception) -> Response:
         logger.debug('In GeneralExceptionHandler')
 
-        # Log the exception
         logger.error(f'General Exception: {exception}')
         logger.error(f'Request Type Was: {get_request_type(handler_input)}')
 
         if get_request_type(handler_input) == 'IntentRequest':
             logger.error(f'Intent Name Was: {get_intent_name(handler_input)}')
+
+        session_attrs = handler_input.attributes_manager.session_attributes
+        ambiguous_songs = session_attrs.get('ambiguous_songs')
+
+        if ambiguous_songs and get_intent_name(handler_input) == 'AMAZON.FallbackIntent':
+            logger.debug('Treating FallbackIntent as artist clarification due to ambiguous songs in session')
+            handler_input.request_envelope.request.intent.name = 'NaviSonicClarifyArtist'
+            handler_input.request_envelope.request.intent.slots = {
+                'artist': type('obj', (object,), {'value': handler_input.request_envelope.request.utterance.strip()})()
+            }
+
+            clarify_handler = NaviSonicClarifyArtist()
+            return clarify_handler.handle(handler_input)
 
         speech = sanitise_speech_output("Sorry, I didn't get that. Can you please say it again!!")
         handler_input.response_builder.speak(speech).ask(speech)
