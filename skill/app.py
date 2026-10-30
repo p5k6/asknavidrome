@@ -15,6 +15,7 @@ from ask_sdk_model import Response
 from ask_sdk_core.dispatch_components import AbstractExceptionHandler
 from flask_ask_sdk.skill_adapter import SkillAdapter
 
+import asknavidrome.matching as matching
 import asknavidrome.subsonic_api as api
 import asknavidrome.media_queue as queue
 import asknavidrome.controller as controller
@@ -456,32 +457,15 @@ class NaviSonicPlaySong(AbstractRequestHandler):
 
         song = get_slot_value_v2(handler_input, 'song')
 
+        if not song or not song.value:
+            return ask_for_song(handler_input)
+
         logger.debug(f'Searching for song by title: {song.value}')
 
-        exact_matches = connection.search_song_exact_title(song.value)
+        # Alexa sometimes puts "<song> by <artist>" in the song slot, so this also tries that
+        lookup = connection.find_song_from_phrase(song.value)
 
-        if exact_matches and len(exact_matches) == 1:
-            song_to_play = exact_matches[0]
-            play_queue.clear()
-            controller.enqueue_songs(connection, play_queue, [song_to_play.get('id')])
-
-            speech = sanitise_speech_output(f'Playing {song_to_play.get("title")} by {song_to_play.get("artist")}')
-            logger.info(speech)
-            card = {'title': 'AskNavidrome', 'text': speech}
-            track_details = play_queue.get_next_track()
-
-            return controller.start_playback('play', speech, card, track_details, handler_input)
-
-        elif exact_matches and len(exact_matches) > 1:
-            artists_str = ', '.join([f'{m.get("artist")}' for m in exact_matches[:3]])
-            text = sanitise_speech_output(f"I found multiple songs called {song.value} by {artists_str}. Which artist do you mean?")
-            handler_input.response_builder.speak(text).ask(text)
-            return handler_input.response_builder.response
-
-        else:
-            text = sanitise_speech_output(f"I couldn't find a song called {song.value}.")
-            handler_input.response_builder.speak(text).ask(text)
-            return handler_input.response_builder.response
+        return respond_to_song_lookup(handler_input, lookup, song.value)
 
 
 class NaviSonicClarifyArtist(AbstractRequestHandler):
@@ -497,41 +481,33 @@ class NaviSonicClarifyArtist(AbstractRequestHandler):
         session_attrs = handler_input.attributes_manager.session_attributes
 
         ambiguous_songs = session_attrs.get('ambiguous_songs')
-        song_title = session_attrs.get('ambiguous_song_title')
 
-        if not ambiguous_songs or not artist:
+        if not artist or not artist.value:
             text = sanitise_speech_output("I didn't catch that. Please try again.")
             handler_input.response_builder.speak(text).ask(text)
             return handler_input.response_builder.response
 
-        from asknavidrome.matching import artists_match
-
         artist_value = artist.value
-        matching_song = None
 
-        for song in ambiguous_songs:
-            if artists_match(artist_value, song.get('artist', '')):
-                matching_song = song
-                break
+        if not ambiguous_songs:
+            # Nothing is waiting for an answer, so this is really a plain "play <something>"
+            # request that Alexa matched to this intent. Treat it as one.
+            return play_unprompted_request(handler_input, artist_value)
+
+        matching_song = next((song for song in ambiguous_songs
+                              if matching.artist_credit_matches(artist_value, song.get('artist', ''))), None)
+
+        if not matching_song:
+            # The answer may have been misheard, so accept an artist that is clearly closest
+            matching_song = matching.pick_song_by_similar_artist(artist_value, ambiguous_songs)
 
         if matching_song:
-            play_queue.clear()
-            controller.enqueue_songs(connection, play_queue, [matching_song.get('id')])
+            return respond_to_song_lookup(handler_input, {'status': 'match', 'song': matching_song, 'candidates': []},
+                                          matching_song.get('title'))
 
-            speech = sanitise_speech_output(f'Playing {matching_song.get("title")} by {matching_song.get("artist")}')
-            logger.info(speech)
-            card = {'title': 'AskNavidrome', 'text': speech}
-            track_details = play_queue.get_next_track()
-
-            session_attrs.pop('ambiguous_songs', None)
-            session_attrs.pop('ambiguous_song_title', None)
-
-            return controller.start_playback('play', speech, card, track_details, handler_input)
-
-        else:
-            text = sanitise_speech_output(f"I didn't find {artist_value} in the options. Which artist did you mean?")
-            handler_input.response_builder.speak(text).ask(text)
-            return handler_input.response_builder.response
+        text = sanitise_speech_output(f"I didn't find {artist_value} in the options. Which artist did you mean?")
+        handler_input.response_builder.speak(text).ask(text)
+        return handler_input.response_builder.response
 
 
 class NaviSonicPlaySongByArtist(AbstractRequestHandler):
@@ -547,80 +523,22 @@ class NaviSonicPlaySongByArtist(AbstractRequestHandler):
     def handle(self, handler_input: HandlerInput) -> Response:
         logger.debug('In NaviSonicPlaySongByArtist')
 
-        # Get variables from intent
+        # Get variables from intent. Alexa does not always fill in the artist.
         artist = get_slot_value_v2(handler_input, 'artist')
         song = get_slot_value_v2(handler_input, 'song')
+
+        if not song or not song.value:
+            return ask_for_song(handler_input)
 
         artist_value = artist.value if artist else None
         logger.debug(f'Searching for the song {song.value} by {artist_value if artist_value else "unknown artist"}')
 
-        # If artist slot is missing or empty, try to find exact title match
-        if not artist_value:
-            logger.debug(f'Artist slot missing, searching for exact title: {song.value}')
-            exact_matches = connection.search_song_exact_title(song.value)
-
-            if exact_matches and len(exact_matches) == 1:
-                song_to_play = exact_matches[0]
-                play_queue.clear()
-                controller.enqueue_songs(connection, play_queue, [song_to_play.get('id')])
-
-                speech = sanitise_speech_output(f'Playing {song_to_play.get("title")} by {song_to_play.get("artist")}')
-                logger.info(speech)
-                card = {'title': 'AskNavidrome', 'text': speech}
-                track_details = play_queue.get_next_track()
-
-                return controller.start_playback('play', speech, card, track_details, handler_input)
-
-            elif exact_matches and len(exact_matches) > 1:
-                handler_input.attributes_manager.session_attributes['ambiguous_songs'] = exact_matches
-                handler_input.attributes_manager.session_attributes['ambiguous_song_title'] = song.value
-
-                artists_str = ', '.join([f'{m.get("artist")}' for m in exact_matches[:3]])
-                text = sanitise_speech_output(f"I found multiple songs called {song.value} by {artists_str}. Which artist do you mean?")
-                handler_input.response_builder.speak(text).ask(text)
-                return handler_input.response_builder.response
-
-            else:
-                text = sanitise_speech_output(f"I couldn't find a song called {song.value}.")
-                handler_input.response_builder.speak(text).ask(text)
-                return handler_input.response_builder.response
-
-        # Artist slot is present and has a value
-        logger.debug(f'Searching for the song {song.value} by {artist_value}')
-
-        # Search for the artist using best matching
-        artist_lookup = connection.search_artist_best(artist_value)
-
-        if artist_lookup is None:
-            text = sanitise_speech_output(f"I couldn't find the artist {artist_value} in the collection.")
-            handler_input.response_builder.speak(text).ask(text)
-
-            return handler_input.response_builder.response
-
+        if artist_value:
+            lookup = connection.find_song(song.value, artist_value)
         else:
-            artist_id = artist_lookup.get('id')
-            artist_name = artist_lookup.get('name')
-            logger.debug(f'Found artist: {artist_name} (ID: {artist_id})')
+            lookup = connection.find_song_from_phrase(song.value)
 
-            # Search for the best matching song
-            song_best = connection.search_song_best(song.value, artist_value)
-
-            if song_best:
-                play_queue.clear()
-                controller.enqueue_songs(connection, play_queue, [song_best.get('id')])
-
-                speech = sanitise_speech_output(f'Playing {song_best.get("title")} by {song_best.get("artist")}')
-                logger.info(speech)
-                card = {'title': 'AskNavidrome', 'text': speech}
-                track_details = play_queue.get_next_track()
-
-                return controller.start_playback('play', speech, card, track_details, handler_input)
-
-            else:
-                text = sanitise_speech_output(f"I couldn't find a song called {song.value} by {artist_value} in the collection.")
-                handler_input.response_builder.speak(text).ask(text)
-
-                return handler_input.response_builder.response
+        return respond_to_song_lookup(handler_input, lookup, song.value, artist_value)
 
 
 class NaviSonicPlayPlaylist(AbstractRequestHandler):
@@ -1187,6 +1105,76 @@ class LoggingResponseInterceptor(AbstractResponseInterceptor):
 #
 # Functions
 #
+
+
+def ask_for_song(handler_input: HandlerInput) -> Response:
+    """Ask what to play when Alexa sent a song request with no song in it."""
+    text = sanitise_speech_output('What song would you like to hear?')
+    handler_input.response_builder.speak(text).ask(text)
+
+    return handler_input.response_builder.response
+
+
+def respond_to_song_lookup(handler_input: HandlerInput, lookup: dict, song_term: str, artist_term: str = None) -> Response:
+    """Play the song, ask which artist was meant, or say it was not found.
+
+    :param HandlerInput handler_input: The Alexa request
+    :param dict lookup: The result of connection.find_song() or find_song_from_phrase()
+    :param str song_term: The song as heard by Alexa, used in spoken replies
+    :param str artist_term: The artist as heard by Alexa, if any
+    """
+    session_attrs = handler_input.attributes_manager.session_attributes
+
+    if lookup['status'] == 'match':
+        song_to_play = lookup['song']
+        play_queue.clear()
+        controller.enqueue_songs(connection, play_queue, [song_to_play.get('id')])
+
+        session_attrs.pop('ambiguous_songs', None)
+        session_attrs.pop('ambiguous_song_title', None)
+
+        speech = sanitise_speech_output(f'Playing {song_to_play.get("title")} by {song_to_play.get("artist")}')
+        logger.info(speech)
+        card = {'title': 'AskNavidrome', 'text': speech}
+        track_details = play_queue.get_next_track()
+
+        return controller.start_playback('play', speech, card, track_details, handler_input)
+
+    if lookup['status'] == 'ambiguous':
+        # Remember the options so the answer to "which artist?" can be matched to one
+        session_attrs['ambiguous_songs'] = lookup['candidates']
+        session_attrs['ambiguous_song_title'] = song_term
+
+        artists_str = ', '.join(str(song.get('artist', 'unknown')) for song in lookup['candidates'][:3])
+        text = sanitise_speech_output(f"I found more than one song called {song_term}, by {artists_str}. Which artist?")
+        handler_input.response_builder.speak(text).ask(text)
+
+        return handler_input.response_builder.response
+
+    if artist_term:
+        text = sanitise_speech_output(f"I couldn't find {song_term} by {artist_term}.")
+    else:
+        text = sanitise_speech_output(f"I couldn't find {song_term}.")
+    handler_input.response_builder.speak(text).ask(text)
+
+    return handler_input.response_builder.response
+
+
+def play_unprompted_request(handler_input: HandlerInput, phrase: str) -> Response:
+    """Handle a bare "play <phrase>" that Alexa sent as an answer to a question nobody asked.
+
+    The phrase is tried as a song first, then as an artist.
+    """
+    lookup = connection.find_song_from_phrase(phrase)
+
+    if lookup['status'] != 'none':
+        return respond_to_song_lookup(handler_input, lookup, phrase)
+
+    if connection.search_artist_best(phrase) is not None:
+        # The slot is called artist in both intents, so the artist handler can take it as is
+        return NaviSonicPlayMusicByArtist().handle(handler_input)
+
+    return respond_to_song_lookup(handler_input, lookup, phrase)
 
 
 def sanitise_speech_output(speech_string: str) -> str:

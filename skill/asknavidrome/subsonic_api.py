@@ -446,6 +446,15 @@ class SubsonicConnection:
         self.logger.debug(f'In function search_artist_best() for {term}')
 
         artists = self.search_artist(term)
+
+        if not artists:
+            # The server's search does not ignore "the", so "the grateful dead" finds nothing
+            # when the library stores "Grateful Dead"
+            stripped = matching.strip_leading_article(term)
+            if stripped != term:
+                self.logger.debug(f'No artists found, retrying without the article: {stripped}')
+                artists = self.search_artist(stripped)
+
         if not artists:
             return None
 
@@ -473,7 +482,7 @@ class SubsonicConnection:
                 self.logger.debug(f'Combined search returned {len(songs)} results')
                 for i, song in enumerate(songs[:5]):
                     self.logger.debug(f'  Result {i}: {song.get("title")} by {song.get("artist")}')
-                best = matching.find_best_song(song_term, songs, artist_term)
+                best = matching.find_best_song(song_term, songs, artist_term, require_artist=True)
                 if best:
                     self.logger.info(f'Found best match: {best.get("title")} by {best.get("artist")}')
                     return best
@@ -490,7 +499,7 @@ class SubsonicConnection:
         for i, song in enumerate(songs[:10]):
             self.logger.debug(f'  Result {i}: {song.get("title")} by {song.get("artist")}')
 
-        best = matching.find_best_song(song_term, songs, artist_term)
+        best = matching.find_best_song(song_term, songs, artist_term, require_artist=bool(artist_term))
         if best:
             self.logger.info(f'Found best match: {best.get("title")} by {best.get("artist")}')
         else:
@@ -513,3 +522,65 @@ class SubsonicConnection:
             return None
 
         return matching.find_song_by_exact_title(song_term, songs)
+
+    def find_song(self, song_term: str, artist_term: Optional[str] = None) -> Dict:
+        """Look up a song, and an artist if one was given, without guessing.
+
+        The song's own metadata decides the match, so an artist the server cannot find by
+        name (or that Alexa misheard) does not stop a song with an exact title being found.
+
+        :param str song_term: The title as heard by Alexa
+        :param str artist_term: The artist as heard by Alexa, if any
+        :return: A dictionary with status, song and candidates. Status is ``match`` (play
+                 ``song``), ``ambiguous`` (ask the user to pick from ``candidates``, one per
+                 artist) or ``none``.
+        :rtype: dict
+        """
+        self.logger.debug(f'In function find_song() for {song_term} by {artist_term}')
+
+        if artist_term:
+            song = self.search_song_best(song_term, artist_term)
+            if song:
+                return {'status': 'match', 'song': song, 'candidates': []}
+
+        exact = self.search_song_exact_title(song_term) or []
+        distinct = matching.distinct_by_artist(exact)
+
+        if not distinct:
+            return {'status': 'none', 'song': None, 'candidates': []}
+
+        if not artist_term:
+            if len(distinct) == 1:
+                return {'status': 'match', 'song': distinct[0], 'candidates': []}
+            return {'status': 'ambiguous', 'song': None, 'candidates': distinct}
+
+        # An artist was given but no song matched it exactly, so it may have been misheard
+        similar = matching.pick_song_by_similar_artist(artist_term, exact)
+        if similar:
+            return {'status': 'match', 'song': similar, 'candidates': []}
+
+        if len(distinct) > 1:
+            return {'status': 'ambiguous', 'song': None, 'candidates': distinct}
+
+        return {'status': 'none', 'song': None, 'candidates': []}
+
+    def find_song_from_phrase(self, phrase: str) -> Dict:
+        """Look up a song when Alexa may have put "<song> by <artist>" in a single slot.
+
+        The whole phrase is tried as a title first, since titles can contain "by".
+
+        :param str phrase: The text heard by Alexa
+        :return: The same dictionary as :meth:`find_song`
+        :rtype: dict
+        """
+        result = self.find_song(phrase)
+        if result['status'] != 'none':
+            return result
+
+        for song_term, artist_term in matching.split_song_and_artist(phrase):
+            self.logger.debug(f'Retrying as song {song_term} by artist {artist_term}')
+            result = self.find_song(song_term, artist_term)
+            if result['status'] != 'none':
+                return result
+
+        return {'status': 'none', 'song': None, 'candidates': []}

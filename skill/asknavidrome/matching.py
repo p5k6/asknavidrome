@@ -1,6 +1,7 @@
 import logging
 import re
 import unicodedata
+from difflib import SequenceMatcher
 from typing import Optional, List, Dict, Tuple
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,8 @@ def normalize_string(s: str) -> str:
         return ""
 
     s = s.lower().strip()
+
+    s = s.replace('&', ' and ')
 
     s = unicodedata.normalize('NFKD', s)
     s = s.encode('ascii', 'ignore').decode('ascii')
@@ -49,7 +52,7 @@ def songs_match(title_query: str, title_result: str, artist_query: Optional[str]
 
     if query_norm == result_norm:
         score = 800
-        if artist_query and artist_result and artists_match(artist_query, artist_result):
+        if artist_query and artist_result and artist_credit_matches(artist_query, artist_result):
             score = 1000
         return True, score
 
@@ -64,6 +67,96 @@ def songs_match(title_query: str, title_result: str, artist_query: Optional[str]
 def artists_match(artist_query: str, artist_result: str) -> bool:
     """Check if two artist names match (ignoring case, punctuation, unicode)."""
     return normalize_string(artist_query) == normalize_string(artist_result)
+
+
+def strip_leading_article(term: str) -> str:
+    """Remove a leading "the" from a search term.
+
+    Alexa often hears "the Grateful Dead" while the library stores "Grateful Dead", and
+    Navidrome's search does not ignore the article. Used for search terms only.
+    """
+    stripped = re.sub(r"^\s*the\s+", "", term or "", flags=re.IGNORECASE).strip()
+    return stripped or (term or "")
+
+
+_CREDIT_SPLIT = re.compile(r"\s+(?:feat\.?|ft\.?|featuring|with)\s+|\s*[,;/]\s*", re.IGNORECASE)
+
+
+def artist_credit_matches(artist_query: str, credit: str) -> bool:
+    """Check if an artist query matches a song's artist credit.
+
+    Matches the whole credit, or any one name in a multi-artist credit such as
+    "The Shins feat. Iron & Wine".
+    """
+    query_norm = normalize_string(artist_query)
+    if not query_norm:
+        return False
+
+    if query_norm == normalize_string(credit):
+        return True
+
+    parts = _CREDIT_SPLIT.split(credit or "")
+    return len(parts) > 1 and any(normalize_string(part) == query_norm for part in parts)
+
+
+def artist_similarity(a: str, b: str) -> float:
+    """Return how alike two artist names are, from 0.0 to 1.0, after normalizing."""
+    return SequenceMatcher(None, normalize_string(a), normalize_string(b)).ratio()
+
+
+def distinct_by_artist(songs: List[Dict]) -> List[Dict]:
+    """Keep one song per distinct artist, in the original order.
+
+    The same recording often appears on several releases. One copy per artist is
+    enough to play it or to ask which artist is meant.
+    """
+    seen = set()
+    result = []
+    for song in songs:
+        key = normalize_string(song.get('artist', ''))
+        if key not in seen:
+            seen.add(key)
+            result.append(song)
+    return result
+
+
+def pick_song_by_similar_artist(artist_query: str, songs: List[Dict],
+                                min_similarity: float = 0.75, margin: float = 0.15) -> Optional[Dict]:
+    """Pick the song whose artist is clearly the closest to a misheard artist name.
+
+    Only used on a short list of songs that already have the requested title. Returns
+    None unless one artist is close enough and clearly ahead of the others.
+    """
+    scored = sorted(((artist_similarity(artist_query, s.get('artist', '')), s) for s in distinct_by_artist(songs)),
+                    key=lambda pair: pair[0], reverse=True)
+    if not scored:
+        return None
+
+    top_score, top_song = scored[0]
+    if top_score < min_similarity:
+        return None
+
+    if len(scored) > 1 and top_score - scored[1][0] < margin:
+        return None
+
+    logger.debug(f"Artist '{artist_query}' is closest to '{top_song.get('artist')}' (similarity: {top_score:.2f})")
+    return top_song
+
+
+def split_song_and_artist(phrase: str) -> List[Tuple[str, str]]:
+    """Split "<song> by <artist>" into (song, artist) pairs, rightmost "by" first.
+
+    Alexa sometimes puts the whole phrase in the song slot. Song titles can contain
+    "by", so every split is returned and the caller checks each one against the library.
+    """
+    parts = re.split(r"\s+by\s+", (phrase or "").strip(), flags=re.IGNORECASE)
+    pairs = []
+    for i in range(len(parts) - 1, 0, -1):
+        song = " by ".join(parts[:i]).strip()
+        artist = " by ".join(parts[i:]).strip()
+        if song and artist:
+            pairs.append((song, artist))
+    return pairs
 
 
 def find_best_artist(query: str, artists: List[Dict]) -> Optional[Dict]:
@@ -86,10 +179,12 @@ def find_best_artist(query: str, artists: List[Dict]) -> Optional[Dict]:
     return artists[0]
 
 
-def find_best_song(query: str, songs: List[Dict], artist_filter: Optional[str] = None) -> Optional[Dict]:
+def find_best_song(query: str, songs: List[Dict], artist_filter: Optional[str] = None,
+                   require_artist: bool = False) -> Optional[Dict]:
     """Find the best matching song from a list of search results.
 
-    If artist_filter is provided, strongly prefers songs matching that artist.
+    If artist_filter is provided, strongly prefers songs matching that artist. With
+    require_artist, songs by any other artist are never returned.
     Returns None if no good match found.
     """
     if not songs:
@@ -101,6 +196,8 @@ def find_best_song(query: str, songs: List[Dict], artist_filter: Optional[str] =
         artist = song.get('artist', '')
 
         matches, score = songs_match(query, title, artist_filter, artist)
+        if matches and require_artist and not (artist_filter and artist_credit_matches(artist_filter, artist)):
+            continue
         if matches:
             candidates.append((score, song))
             if score >= 800:

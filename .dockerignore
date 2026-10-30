@@ -7,6 +7,7 @@ sphinx
 **/__pycache__
 **/*.pyc
 skill/tests.py
+skill/tests_handlers.py
 skill/requirements-full.txt
 skill/requirements-docker.in
 .env
