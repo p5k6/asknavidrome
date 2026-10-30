@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+.vscode
+docs
+sphinx
+**/__pycache__
+**/*.pyc
+skill/tests.py
+skill/requirements-full.txt
+skill/requirements-docker.in
+.env
+*.md

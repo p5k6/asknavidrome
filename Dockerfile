@@ -1,33 +1,39 @@
-FROM alpine:3.22.1 AS build
+FROM alpine:3.22.7 AS build
 LABEL maintainer="Ross Stewart <rosskouk@gmail.com>"
 LABEL org.opencontainers.image.source=https://github.com/rosskouk/asknavidrome
 
-RUN apk add python3 py3-pip build-base python3-dev libffi-dev openssl-dev
+RUN apk add --no-cache python3 py3-pip build-base python3-dev libffi-dev openssl-dev
 
 WORKDIR /opt
 
-RUN python3 -m venv env
+# The venv is created without pip so that no installer ships in the final image
+RUN python3 -m venv --without-pip env
 
-COPY skill /src/skill
+COPY skill/requirements-docker.txt /src/requirements-docker.txt
 
-WORKDIR /src
-
-RUN source /opt/env/bin/activate && pip --no-cache-dir install wheel && pip --no-cache-dir install -r skill/requirements-docker.txt
+RUN pip --no-cache-dir --python /opt/env/bin/python install -r /src/requirements-docker.txt
 
 
-FROM alpine:3.22.1
+FROM alpine:3.22.7
 LABEL maintainer="Ross Stewart <rosskouk@gmail.com>"
 LABEL org.opencontainers.image.source=https://github.com/rosskouk/asknavidrome
 
-RUN apk add python3
+# Pick up security fixes released since the base image was published
+RUN apk upgrade --no-cache && \
+    apk add --no-cache python3 && \
+    adduser -D -H -u 10001 navi
 
 COPY --from=build /opt/env /opt/env
-COPY --from=build /src/skill /opt/asknavidrome/
+COPY skill /opt/asknavidrome/
 
 WORKDIR /opt/asknavidrome
 
 # Activate Python Virtual Environment
-ENV PATH="/opt/env/bin:$PATH"
+ENV PATH="/opt/env/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+USER navi
 
 EXPOSE 5000
 
